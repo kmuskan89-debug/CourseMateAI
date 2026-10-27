@@ -1,0 +1,198 @@
+============================================================
+DOCUMENT LOADERS - NOTES FOR MY RAG PROJECT
+============================================================
+
+1. WHAT IS A DOCUMENT LOADER?
+------------------------------------------------------------
+A document loader reads a file (PDF, Word, text, web page...) and turns
+it into a list of Document objects that LangChain understands.
+
+Each Document has two parts:
+    doc.page_content   -> the text
+    doc.metadata       -> info about it (source file, page number, etc.)
+
+Where it sits in the RAG pipeline:
+
+    LOAD  ->  SPLIT  ->  EMBED  ->  STORE  ->  RETRIEVE  ->  ANSWER
+    (this     (chunks)   (Gemini)   (Chroma)   (search)      (Gemini)
+     file)
+
+
+2. SETUP
+------------------------------------------------------------
+Install everything first (venv must be active):
+
+    pip install -r requirements.txt
+
+Imports used in these notes:
+
+    from langchain_community.document_loaders import (
+        PyPDFLoader,
+        TextLoader,
+        Docx2txtLoader,
+        UnstructuredPowerPointLoader,
+        WebBaseLoader,
+        CSVLoader,
+        DirectoryLoader,
+    )
+
+
+3. LOADERS FOR EACH FILE TYPE
+------------------------------------------------------------
+
+--- PDF (one Document per page) -----------------------------
+    loader = PyPDFLoader(r"data\lecture1.pdf")
+    docs = loader.load()
+    print(len(docs))                   # number of pages
+    print(docs[0].page_content[:300])  # first 300 characters
+    print(docs[0].metadata)            # {'source': ..., 'page': 0}
+
+Needs: pypdf
+Note: scanned PDFs (images of pages) have no text, so you get empty
+results. Those need OCR, which is a separate step.
+
+--- Plain text (.txt) ---------------------------------------
+    loader = TextLoader(r"data\notes.txt", encoding="utf-8")
+    docs = loader.load()
+
+Always pass encoding="utf-8" on Windows to avoid decode errors.
+
+--- Word (.docx) ---------------------------------------------
+    loader = Docx2txtLoader(r"data\assignment.docx")
+    docs = loader.load()
+
+Needs: docx2txt
+
+--- PowerPoint (.pptx) ---------------------------------------
+    loader = UnstructuredPowerPointLoader(r"data\slides.pptx")
+    docs = loader.load()
+
+Needs: unstructured, python-pptx
+
+--- CSV -------------------------------------------------------
+    loader = CSVLoader(r"data\marks.csv", encoding="utf-8")
+    docs = loader.load()          # one Document per row
+
+--- Web page --------------------------------------------------
+    loader = WebBaseLoader("https://example.com/article")
+    docs = loader.load()
+
+Needs: beautifulsoup4
+Several pages at once: WebBaseLoader(["url1", "url2"])
+
+
+4. LOADING A WHOLE FOLDER
+------------------------------------------------------------
+Put all course files in a folder (for example "data") and load them
+together:
+
+    loader = DirectoryLoader(
+        "data",
+        glob="**/*.pdf",            # all PDFs, including subfolders
+        loader_cls=PyPDFLoader,
+        show_progress=True,
+    )
+    docs = loader.load()
+
+For a different file type, change glob and loader_cls:
+
+    glob="**/*.txt"   with  loader_cls=TextLoader
+    glob="**/*.docx"  with  loader_cls=Docx2txtLoader
+
+For mixed folders, run one DirectoryLoader per file type and join the
+lists:
+
+    all_docs = pdf_docs + txt_docs + docx_docs
+
+
+5. load() vs lazy_load()
+------------------------------------------------------------
+    docs = loader.load()           # everything in memory at once
+
+    for doc in loader.lazy_load(): # one at a time
+        ...                        # better for very large folders
+
+
+6. METADATA (IMPORTANT FOR SHOWING SOURCES)
+------------------------------------------------------------
+Metadata tells you where an answer came from. For PDFs it contains the
+file path and page number. You can add your own:
+
+    for d in docs:
+        d.metadata["course"] = "Machine Learning"
+
+When you answer a question, show the sources:
+
+    for d in retrieved_docs:
+        print(d.metadata["source"], d.metadata.get("page"))
+
+
+7. NEXT STEP: SPLIT INTO CHUNKS
+------------------------------------------------------------
+A full page is usually too big to search well, so cut documents into
+smaller chunks:
+
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,       # characters per chunk
+        chunk_overlap=200,     # overlap keeps context between chunks
+    )
+    chunks = splitter.split_documents(docs)
+    print(len(chunks))
+
+Tune chunk_size and chunk_overlap by testing your own questions.
+
+
+8. THEN: EMBED AND STORE (GEMINI + CHROMA)
+------------------------------------------------------------
+    from langchain_google_genai import GoogleGenerativeAIEmbeddings
+    from langchain_chroma import Chroma
+
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model="gemini-embedding-001"   # check Google's docs for the
+    )                                  # current embedding model name
+
+    vectorstore = Chroma.from_documents(
+        chunks,
+        embedding=embeddings,
+        persist_directory="chroma_db", # saved to disk, reuse next time
+    )
+
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
+    results = retriever.invoke("What is overfitting?")
+
+Do the indexing step once and save it. On later runs, load the saved
+store instead of re-embedding:
+
+    vectorstore = Chroma(
+        persist_directory="chroma_db",
+        embedding_function=embeddings,
+    )
+
+
+9. COMMON PROBLEMS
+------------------------------------------------------------
+- ModuleNotFoundError: pypdf          -> pip install pypdf
+- ModuleNotFoundError: docx2txt       -> pip install docx2txt
+- Empty page_content from a PDF       -> scanned PDF, needs OCR
+- UnicodeDecodeError on .txt          -> add encoding="utf-8"
+- File not found                      -> check the path; use raw
+                                         strings r"..." on Windows
+- Web loader USER_AGENT warning       -> safe to ignore, or set the
+                                         USER_AGENT environment variable
+- unstructured install is slow/fails  -> skip .pptx support at first,
+                                         or export slides to PDF
+- 429 / quota errors while embedding  -> too many chunks at once; embed
+                                         in smaller batches and retry
+
+
+10. QUICK CHECKLIST
+------------------------------------------------------------
+[ ] Course files placed in the "data" folder
+[ ] .env contains GOOGLE_API_KEY (and .env is in .gitignore)
+[ ] Loaded documents, printed len(docs) and one page_content
+[ ] Split into chunks, printed len(chunks)
+[ ] Embedded and stored in Chroma with persist_directory
+[ ] Tested a few questions with retriever.invoke(...)
+[ ] Sources (metadata) shown with each answer

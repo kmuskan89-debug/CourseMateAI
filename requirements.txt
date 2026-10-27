@@ -1,0 +1,50 @@
+# ============================================================
+# RAG project with Google Gemini
+# Install with:  pip install -r requirements.txt
+# ============================================================
+
+# ---------- Environment / config ----------
+python-dotenv            # load GOOGLE_API_KEY from .env
+
+# ---------- LangChain core ----------
+langchain
+langchain-core
+langchain-community      # extra document loaders and integrations
+langchain-text-splitters # RecursiveCharacterTextSplitter (chunking)
+# langchain-classic      # uncomment only if you use old-style chains (RetrievalQA, etc.)
+
+# ---------- Google Gemini (LLM + embeddings) ----------
+langchain-google-genai   # ChatGoogleGenerativeAI + GoogleGenerativeAIEmbeddings
+google-genai             # official Google GenAI SDK
+
+# ---------- Vector database ----------
+langchain-chroma         # Chroma integration for LangChain
+chromadb                 # local vector store (saves to disk)
+# faiss-cpu              # alternative to Chroma (also use langchain-community)
+
+# ---------- Document loading (read your files) ----------
+pypdf                    # PDF files
+python-docx              # Word (.docx) files
+docx2txt                 # simple .docx text loader
+python-pptx              # PowerPoint (.pptx) files
+beautifulsoup4           # web pages / HTML
+lxml                     # faster HTML parsing
+unstructured             # mixed file types (large install, optional)
+# pymupdf                # alternative PDF loader, better for complex layouts
+
+# ---------- Retrieval improvements (optional but common) ----------
+rank-bm25                # keyword search for hybrid retrieval
+numpy                    # vector math
+
+# ---------- Data handling and utilities ----------
+pydantic                 # structured outputs and validation
+tiktoken                 # token counting for chunk sizes
+tqdm                     # progress bars when indexing many files
+requests                 # fetching web content
+
+# ---------- User interface ----------
+streamlit                # web UI for the chatbot
+
+# ---------- Evaluation / tracing (optional) ----------
+# langsmith              # trace and debug LangChain runs
+# ragas                  # evaluate RAG answer quality
